@@ -1,0 +1,69 @@
+stages:
+  - tf_validate
+  - tf_plan
+  - tf_apply
+  - tf_destroy
+
+.pre_steps:
+  image:
+    name: hashicorp/terraform:1.0.9
+    entrypoint: [""]
+  before_script:
+    - echo "-----Initializing Terraform-----"
+    - cd terraform
+    - terraform --version
+    - terraform init
+
+.rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+
+tf_validate:
+  extends:
+    - .pre_steps
+  stage: tf_validate
+  script:
+    - echo "-----Validating Terraform Code-----"
+    - terraform validate
+
+tf_plan:
+  extends:
+    - .pre_steps
+  stage: tf_plan
+  needs: "[tf_validate]"
+  dependencies: "[tf_validate]"
+  script:
+    - echo "----Terraform Plan-----"
+    - terraform plan -var-file=env/prod.tfvars -out="runner-tfplan.outfile"
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - tfplan
+
+tf_apply:
+  extends:
+    - .pre_steps
+  stage: tf_apply
+  needs: "[tf_plan]"
+  dependencies: "[tf_plan]"
+  script:
+    - terraform apply "runner-tfplan.outfile"
+
+.destroy:
+  extends:
+    - .pre_steps
+    - .rules
+  script:
+    - echo "-----Terraform Destroy-----"
+    - terraform destroy -auto-approve
+
+tf_destroy:
+  extends:
+    - .destroy
+  stage: tf_destroy
+
